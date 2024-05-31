@@ -21,7 +21,7 @@ pip install git+https://github.com/openai/CLIP.git
 For using the aforementioned virtual environment in a Jupyter Notebook, you need to manually add the kernel as follows:
 
 ```bash
-(wgs-rl-venv) $ python -m ipykernel install --user --name=wgs-rl-venv
+python -m ipykernel install --user --name=wgs-rl-venv
 ```
 
 
