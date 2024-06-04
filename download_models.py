@@ -15,7 +15,7 @@ def reporthook(count, block_size, total_size):
         return
     duration = time.time() - start_time
     progress_size = int(count * block_size)
-    speed = int(progress_size / (1024 * duration))
+    speed = int(progress_size / (1024 * duration + 0.00000001))
     percent = min(int(count * block_size * 100 / total_size), 100)
     sys.stdout.write("\r      \\__%d%%, %d MB, %d KB/s, %d seconds passed" %
                      (percent, progress_size / (1024 * 1024), speed, duration))
@@ -42,8 +42,9 @@ def download(src, sha256sum, dest):
         if not sha256_check:
             raise Exception("Error: Invalid sha256 sum: {}".format(sha256_hash.hexdigest()))
 
-    tar_file = tarfile.open(tmp_tar, mode='r')
-    tar_file.extractall(dest)
+    with tarfile.open(tmp_tar, mode='r') as tar_file:
+        tar_file.extractall(dest)
+
     os.remove(tmp_tar)
 
 
