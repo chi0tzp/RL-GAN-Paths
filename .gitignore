@@ -9,10 +9,8 @@ __pycache__/
 dev/
 figs/inkscape/
 models/pretrained/
-
-#experiments/*
-#!experiments/latent_codes/
-
 !experiments/
 experiments/*
-!experiments/latent_codes/
+!experiments/latent_codes/*
+!rl_experiments/
+rl_experiments/*
