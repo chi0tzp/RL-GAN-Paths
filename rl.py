@@ -1,17 +1,17 @@
-from stable_baselines3 import SAC
+from SAC import SAC
 from env_gan import GANEnv
 import matplotlib.pyplot as plt
 import os
 
 gan_model_name='stylegan2_ffhq512'
 text_prompt='a person with blue eyes'
-threshold=0.95
-epsilon=0.15
+threshold=0.5
+epsilon=0.025
 
 env = GANEnv(gan_model_name=gan_model_name, text_prompt=text_prompt, threshold=threshold, epsilon=epsilon)
 
-model = SAC('MlpPolicy', env, verbose=1)
-model.learn(total_timesteps=10000)
+model = SAC('MlpPolicy', env, verbose=1, buffer_size=1000)
+model.learn(total_timesteps=1000)
 
 text_prompt_folder = text_prompt.replace(' ', '_')
 
@@ -27,5 +27,5 @@ while not done:
     done = truncated or terminated
     print(f"Reward: {reward}")
     image = info["image"]
-    
+    plt.imshow(image)
     plt.show()
