@@ -7,6 +7,9 @@ from lib.utils import tensor2image
 import matplotlib.pyplot as plt
 import clip
 from models.load_generator import load_generator
+import torch.nn.functional as F
+from torchvision import transforms
+import os
 
 class GANEnv(gym.Env):
 
@@ -23,46 +26,41 @@ class GANEnv(gym.Env):
         self.epsilon = epsilon # Module of the step
         self.threshold = threshold # Threshold of similarity for termination
 
+        self.episode = 1
+
         # GAN
         self.gan_model_name = gan_model_name
-        self.G = load_generator(model_name=self.gan_model_name, latent_is_s='stylegan' in gan_model_name).eval()
+        self.G = load_generator(model_name=self.gan_model_name, latent_is_w=True).eval()
 
         if self.use_cuda:
             self.G = self.G.cuda()
 
         # CLIP
-        self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=self.device)
+        self.clip_model, _ = clip.load("ViT-B/16", device='cpu')
+        farl_model = os.path.join('models/pretrained/farl/FaRL-Base-Patch16-LAIONFace20M-ep64.pth')
+        farl_state = torch.load(farl_model)
+        self.clip_model.load_state_dict(farl_state["state_dict"], strict=False)
+        self.clip_model.float()
+        self.clip_model.eval()
+
+        # CLIP transforms
+        self.clip_img_transform = transforms.Compose([transforms.Resize(224),
+                                                 transforms.CenterCrop(224),
+                                                 transforms.Normalize((0.48145466, 0.4578275, 0.40821073),
+                                                                      (0.26862954, 0.26130258, 0.27577711))])
+
         self.text_inputs = clip.tokenize([text_prompt]).to(self.device)
 
         # Action and observation space
-        self.latent_dim = self.G.dim_z
-        self.action_space = spaces.Box(low=-np.pi, high=np.pi, shape=(self.latent_dim,), dtype=np.float32)
+        self.latent_dim = self.G.num_layers * self.G.dim_z # num_layers X img_size (dim_z)
+        self.action_space = spaces.Box(low=-1000, high=1000, shape=(self.latent_dim,), dtype=np.float32)
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.latent_dim,), dtype=np.float32)
 
-        self.current_latent = torch.randn(1, self.latent_dim)
+        z = torch.randn(1, self.G.dim_z)
+        wp = self.G.get_w(z, truncation=self.truncation)
+        self.current_latent = wp.flatten(start_dim=1, end_dim=-1)
         if self.use_cuda:
             self.current_latent = self.current_latent.cuda()
-
-    def generate_image(self, latent_code):
-        # Un-squeeze current latent code in shape [1, dim] and create hash code for it
-        z = latent_code
-        latent_code_hash = sha1(z.cpu().numpy()).hexdigest()
-
-        if 'stylegan' in self.gan_model_name:
-            # Get W/W+ latent codes from z code
-            wp = self.G.get_w(z, truncation=self.truncation)
-            # Get S latent codes from wp codes
-            styles_dict = self.G.get_s(wp)
-
-            # Generate image
-            with torch.no_grad():
-                img = self.G(styles_dict)
-        else:
-            # Generate image
-            with torch.no_grad():
-                img = self.G(z)
-
-        return img
 
     def step(self, action):
 
@@ -70,58 +68,58 @@ class GANEnv(gym.Env):
         if self.use_cuda:
             delta = delta.cuda()
 
-        step_vector = self.epsilon * torch.sin(delta)
-        
+        # L2 normalisation
+        delta_normalised = F.normalize(delta, p=2, dim=0)
+
+        step_vector = self.epsilon * delta_normalised
         self.current_latent = self.current_latent + step_vector
 
-        with torch.no_grad():
-            generated_image = self.generate_image(self.current_latent)
-
+        generated_image = self.G(self.current_latent)
         image = tensor2image(generated_image.cpu(), adaptive=True)
-        image_input = self.clip_preprocess(image).unsqueeze(0).to(self.device)
 
         # Reward
-        with torch.no_grad():
-            image_features = self.clip_model.encode_image(image_input)
-            text_features = self.clip_model.encode_text(self.text_inputs)
-            reward = torch.cosine_similarity(image_features, text_features).item()
+        image_features = self.clip_model.encode_image(self.clip_img_transform(generated_image))
+        text_features = self.clip_model.encode_text(self.text_inputs)
+        reward = torch.cosine_similarity(image_features, text_features).item()
 
         # Observation
-        observation = self.current_latent.cpu().numpy()
+        observation = self.current_latent.detach().cpu().numpy()
 
         terminated = reward >= self.threshold
-        truncated = False
-        info = {"reward": reward, "image": image}
+        truncated = self.episode >= 50 # Truncation after 50 steps
+        info = {"reward": reward, "image": image, "step": self.episode}
+
+        self.episode += 1
 
         return observation, reward, terminated, truncated, info
+    
+    def compute_reward(self, achived_goal, required_goal, info):
+        return 1
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
-        self.current_latent = torch.randn(1, self.latent_dim)
+        self.episode = 0
+
+        z = torch.randn(1, self.G.dim_z)
+        wp = self.G.get_w(z, truncation=self.truncation)
+        self.current_latent = wp.flatten(start_dim=1, end_dim=-1)
         if self.use_cuda:
             self.current_latent = self.current_latent.cuda()
 
-        observation = self.current_latent.cpu().numpy()
+        observation = self.current_latent.detach().cpu().numpy()
 
         return observation, {}
 
-    def render(self):
-        pass
-
-    def close(self):
-        pass
-
-
 if __name__ == "__main__":
-    env = GANEnv(gan_model_name='stylegan2_ffhq512', text_prompt='animated', threshold=0.95, epsilon=0.25)
+    env = GANEnv(gan_model_name='stylegan2_ffhq512', text_prompt='animated', threshold=0.95, epsilon=0.05)
 
     done = False
     observation, _ = env.reset(seed=42)
     action = env.action_space.sample()
 
     while not done:
-        observation, reward, terminated, truncated, info = env.step(env.action_space.sample())
+        observation, reward, terminated, truncated, info = env.step(action)
         done = truncated or terminated
         print(f"Reward: {reward}")
         image = info["image"]
