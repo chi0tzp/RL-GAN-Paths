@@ -31,7 +31,7 @@ class IDLoss(nn.Module):
         loss = 0
         for i in range(n_samples):
             diff_target = y_hat_feats[i].dot(y_feats[i])
-            loss += 1 - diff_target
+            loss += diff_target
 
         return loss / n_samples
 

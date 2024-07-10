@@ -6,7 +6,7 @@ from .config import FARL, FARL_PRETRAIN_MODEL, SFD, ARCFACE, FAIRFACE, HOPENET, 
 # from .latent_paths import LatentPathsModel
 # from .langauge_dipoles import LanguageDipolesModel
 # from .latent_stats import LatentSpaceStats
-# from .id import IDLoss
+from .id import IDLoss
 # from .trainer import Trainer
 # from .data import PathImages
 # from .evaluation.sfd.sfd_detector import SFDDetector
