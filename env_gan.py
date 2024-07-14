@@ -31,6 +31,8 @@ class GANEnv(gym.Env):
 
         self.episode = 1
 
+        self.previous_image = None # placeholder
+
         # ID
         #self.id_loss = IDLoss() # this need cuda
         self.id_transform = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(256)])
@@ -43,7 +45,7 @@ class GANEnv(gym.Env):
             self.G = self.G.cuda()
 
         # CLIP
-        self.clip_model, _ = clip.load("ViT-B/16", device='cpu')
+        self.clip_model, _ = clip.load("ViT-B/16", device=self.device)
         farl_model = os.path.join('models/pretrained/farl/FaRL-Base-Patch16-LAIONFace20M-ep64.pth')
         farl_state = torch.load(farl_model)
         self.clip_model.load_state_dict(farl_state["state_dict"], strict=False)
@@ -93,7 +95,7 @@ class GANEnv(gym.Env):
         step_vector = self.epsilon * delta_normalised # shape: [batch, theta, img_size]
         
         # Expand the step_vector to match current_latent
-        zeros = torch.zeros(step_vector.shape[0], self.default_layers, step_vector.shape[-1])
+        zeros = torch.zeros(step_vector.shape[0], self.default_layers, step_vector.shape[-1]).to(self.device)
         step_vector = torch.cat((step_vector, zeros), dim=1)
         
         self.current_latent = self.current_latent + step_vector # shape: [batch, num_layers, img_size]
@@ -108,7 +110,7 @@ class GANEnv(gym.Env):
 
         # Reward ID
         if self.episode > 1:
-            #reward_id = self.id_loss(y_hat=self.id_transform(generated_image), y=self.id_transform(previous_image))
+            #reward_id = self.id_loss(y_hat=self.id_transform(generated_image), y=self.id_transform(self.previous_image))
             reward_id = 0
         else:
             reward_id = 0
@@ -124,7 +126,7 @@ class GANEnv(gym.Env):
 
         self.episode += 1
 
-        previous_image = generated_image # Save previous generated image to calculate ID reward
+        self.previous_image = generated_image # Save previous generated image to calculate ID reward
 
         return observation, reward, terminated, truncated, info
     
