@@ -16,7 +16,7 @@ class GANEnv(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 30}
 
-    def __init__(self, gan_model_name, text_prompt, epsilon=0.1, threshold=0.6, truncation = 0.7, use_cuda=True, render_mode=None):
+    def __init__(self, gan_model_name, text_prompt, epsilon=0.1, threshold=0.6, batch_size=1, eta=1, theta=8, truncation = 0.7, use_cuda=True, render_mode=None):
         super(GANEnv, self).__init__()
 
         self.use_cuda = use_cuda and torch.cuda.is_available()
@@ -26,8 +26,9 @@ class GANEnv(gym.Env):
 
         self.epsilon = epsilon # Module of the step
         self.threshold = threshold # Threshold of similarity for termination
-        self.eta = 1 # Weight of reward_id
-        self.theta = 8 # First layers of GAN that will be modified by actions -> # first layers are the one responsible for general modification while the last layers could impact color palette and some details we do not want to change
+        self.eta = eta # Weight of reward_id
+        self.theta = theta # First layers of GAN that will be modified by actions -> # first layers are the one responsible for general modification while the last layers could impact color palette and some details we do not want to change
+        self.batch_size = batch_size  # Number of images to process in a batch
 
         self.episode = 1
 
@@ -67,10 +68,10 @@ class GANEnv(gym.Env):
 
         # Action and observation space
         self.latent_dim = self.G.num_layers * self.G.dim_z # num_layers X img_size (dim_z)
-        self.action_space = spaces.Box(low=-100000, high=100000, shape=(self.theta, self.G.dim_z), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.G.num_layers, self.G.dim_z), dtype=np.float32)
+        self.action_space = spaces.Box(low=-100000, high=100000, shape=(self.batch_size,self.theta, self.G.dim_z), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.batch_size, self.G.num_layers, self.G.dim_z), dtype=np.float32)
 
-        z = torch.randn(1, self.G.dim_z).to(self.device)
+        z = torch.randn(self.batch_size, self.G.dim_z).to(self.device)
         wp = self.G.get_w(z, truncation=self.truncation)
         self.current_latent = wp
         if self.use_cuda:
@@ -100,13 +101,14 @@ class GANEnv(gym.Env):
         
         self.current_latent = self.current_latent + step_vector # shape: [batch, num_layers, img_size]
 
-        generated_image = self.G(self.current_latent)
-        image = tensor2image(generated_image.cpu(), adaptive=True)
+        generated_images = self.G(self.current_latent)
+        #image = tensor2image(generated_image.cpu(), adaptive=True)
+        images = [tensor2image(img.cpu(), adaptive=True) for img in generated_images]
 
         # Reward CLIP
-        image_features = self.clip_model.encode_image(self.clip_img_transform(generated_image))
+        image_features = self.clip_model.encode_image(self.clip_img_transform(generated_images))
         text_features = self.clip_model.encode_text(self.text_inputs)
-        reward_clip = torch.cosine_similarity(image_features, text_features).item()
+        reward_clip = torch.cosine_similarity(image_features, text_features.unsqueeze(0)).mean().item()
 
         # Reward ID
         if self.episode > 1:
@@ -122,23 +124,20 @@ class GANEnv(gym.Env):
 
         terminated = reward >= self.threshold
         truncated = self.episode >= 50 # Truncation after 50 steps
-        info = {"reward": reward, "image": image, "step": self.episode}
+        info = {"reward": reward, "image": images, "step": self.episode}
 
         self.episode += 1
 
-        self.previous_image = generated_image # Save previous generated image to calculate ID reward
+        self.previous_image = generated_images # Save previous generated image to calculate ID reward
 
         return observation, reward, terminated, truncated, info
-    
-    def compute_reward(self, achived_goal, required_goal, info):
-        return 1
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
 
         self.episode = 0
 
-        z = torch.randn(1, self.G.dim_z).to(self.device)
+        z = torch.randn(self.batch_size, self.G.dim_z).to(self.device)
         wp = self.G.get_w(z, truncation=self.truncation)
         self.current_latent = wp
         if self.use_cuda:
@@ -155,12 +154,11 @@ if __name__ == "__main__":
     observation, _ = env.reset(seed=42)
     action = env.action_space.sample()
     action = torch.tensor(action, dtype=torch.float32)
-    action = action.unsqueeze(0)
 
     while not done:
         observation, reward, terminated, truncated, info = env.step(action)
         done = truncated or terminated
         print(f"Reward: {reward}")
-        image = info["image"]
-        plt.imshow(image)
+        images = info["image"]
+        plt.imshow(images[0])
         plt.show()

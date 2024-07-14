@@ -11,8 +11,9 @@ class CustomCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         if self.n_calls % self.save_freq == 0:
-            image = self.locals['infos'][0]["image"]
+            images = self.locals['infos'][0]["image"]
             step = self.num_timesteps
-            image_path = os.path.join(self.save_path, f'step={step}.jpg')
-            image.save(image_path)
+            for i, image in enumerate(images):
+                image_path = os.path.join(self.save_path, f'image_{i}_step={step}.jpg')
+                image.save(image_path)
         return True

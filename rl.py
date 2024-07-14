@@ -8,12 +8,13 @@ gan_model_name='stylegan2_ffhq512'
 text_prompt='a photo of a similing face'
 threshold=0.5
 epsilon=0.025
+batch_size = 2
 
 save_interval = 5  # Save image every 1000 steps
 text_prompt_folder = text_prompt.replace(' ', '_')
 experiment_path = os.path.join('rl_experiments', gan_model_name, text_prompt_folder, f"th={threshold}_ep={epsilon}")
 
-env = GANEnv(gan_model_name=gan_model_name, text_prompt=text_prompt, threshold=threshold, epsilon=epsilon)
+env = GANEnv(gan_model_name=gan_model_name, text_prompt=text_prompt, threshold=threshold, epsilon=epsilon, batch_size=batch_size)
 
 model = SAC('MlpPolicy', env, verbose=1, buffer_size=10)
 
@@ -33,9 +34,8 @@ while not done:
     observation, reward, terminated, truncated, info = env.step(action)
     done = truncated or terminated
     print(f"Reward: {reward}")
-    image = info["image"]
-    plt.imshow(image)
-    plt.show()
+    images = info["image"]
     os.makedirs(os.path.join(experiment_path, 'images', 'val'), exist_ok=True)
-    image.save(os.path.join(experiment_path, 'images', 'val', f'ep={episode}.jpg'))
+    for i, image in enumerate(images):
+        image.save(os.path.join(experiment_path, 'images', 'val', f'image_{i}_ep={episode}.jpg'))
     episode += 1
