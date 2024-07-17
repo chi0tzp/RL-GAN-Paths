@@ -16,27 +16,27 @@ class GANEnv(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 30}
 
-    def __init__(self, gan_model_name, text_prompt, epsilon=0.1, threshold=0.6, batch_size=1, eta=1, theta=8, truncation = 0.7, use_cuda=True, render_mode=None):
+    def __init__(self, gan_model_name, text_prompt, eval_mode=False, epsilon=0.1, threshold=0.6, batch_size=1, eta=1, theta=8, truncation = 0.7, use_cuda=True, render_mode=None):
         super(GANEnv, self).__init__()
 
         self.use_cuda = use_cuda and torch.cuda.is_available()
         self.device = "cuda" if self.use_cuda else "cpu"
 
+        self.eval_mode = eval_mode
+
         self.truncation = truncation # W-space truncation parameter
 
         self.epsilon = epsilon # Module of the step
         self.threshold = threshold # Threshold of similarity for termination
-        self.eta = eta # Weight of reward_id
+        #self.eta = eta # Weight of reward_id
         self.theta = theta # First layers of GAN that will be modified by actions -> # first layers are the one responsible for general modification while the last layers could impact color palette and some details we do not want to change
-        self.batch_size = batch_size  # Number of images to process in a batch
+        #self.batch_size = batch_size  # Number of images to process in a batch
 
         self.episode = 1
 
-        self.previous_image = None # placeholder
-
         # ID
         #self.id_loss = IDLoss() # this need cuda
-        self.id_transform = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(256)])
+        #self.id_transform = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(256)])
 
         # GAN
         self.gan_model_name = gan_model_name
@@ -60,18 +60,18 @@ class GANEnv(gym.Env):
                                                                       (0.26862954, 0.26130258, 0.27577711))])
 
         self.text_inputs = clip.tokenize([text_prompt]).to(self.device)
+        self.text_features = self.clip_model.encode_text(self.text_inputs)
 
-        # Assert we can modified #self.theta layers
+        # Assert we can modify #self.theta layers
         assert self.G.num_layers >= self.theta
-
         self.default_layers = self.G.num_layers - self.theta
 
         # Action and observation space
         self.latent_dim = self.G.num_layers * self.G.dim_z # num_layers X img_size (dim_z)
-        self.action_space = spaces.Box(low=-100000, high=100000, shape=(self.batch_size,self.theta, self.G.dim_z), dtype=np.float32)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.batch_size, self.G.num_layers, self.G.dim_z), dtype=np.float32)
+        self.action_space = spaces.Box(low=-100000, high=100000, shape=(self.theta, self.G.dim_z), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.G.num_layers, self.G.dim_z), dtype=np.float32)
 
-        z = torch.randn(self.batch_size, self.G.dim_z).to(self.device)
+        z = torch.randn(1, self.G.dim_z).to(self.device)
         wp = self.G.get_w(z, truncation=self.truncation)
         self.current_latent = wp
         if self.use_cuda:
@@ -101,43 +101,39 @@ class GANEnv(gym.Env):
         
         self.current_latent = self.current_latent + step_vector # shape: [batch, num_layers, img_size]
 
-        generated_images = self.G(self.current_latent)
+        generated_image = self.G(self.current_latent)
         #image = tensor2image(generated_image.cpu(), adaptive=True)
-        images = [tensor2image(img.cpu(), adaptive=True) for img in generated_images]
 
         # Reward CLIP
-        image_features = self.clip_model.encode_image(self.clip_img_transform(generated_images))
-        text_features = self.clip_model.encode_text(self.text_inputs)
-        reward_clip = torch.cosine_similarity(image_features, text_features.unsqueeze(0)).mean().item()
+        image_features = self.clip_model.encode_image(self.clip_img_transform(generated_image))
+        reward_clip = torch.cosine_similarity(image_features, self.text_features.unsqueeze(0)).mean().item()
 
         # Reward ID
-        if self.episode > 1:
-            #reward_id = self.id_loss(y_hat=self.id_transform(generated_image), y=self.id_transform(self.previous_image))
-            reward_id = 0
-        else:
-            reward_id = 0
+        #reward_id = self.id_loss(y_hat=self.id_transform(generated_image), y=self.id_transform(self.previous_image))
         
-        reward = reward_clip + self.eta * reward_id
+        reward = reward_clip #+ self.eta * reward_id
 
         # Observation
         observation = self.current_latent.clone().detach().cpu().numpy()
 
         terminated = reward >= self.threshold
         truncated = self.episode >= 50 # Truncation after 50 steps
-        info = {"reward": reward, "image": images, "step": self.episode}
+        if self.eval_mode:
+            image = tensor2image(generated_image.cpu(), adaptive=True)
+            info = {"reward": reward, "image": image, "step": self.episode}
+        else:
+            info = {}
 
         self.episode += 1
-
-        self.previous_image = generated_images # Save previous generated image to calculate ID reward
 
         return observation, reward, terminated, truncated, info
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
+        super().reset()        
 
         self.episode = 0
 
-        z = torch.randn(self.batch_size, self.G.dim_z).to(self.device)
+        z = torch.randn(1, self.G.dim_z).to(self.device)
         wp = self.G.get_w(z, truncation=self.truncation)
         self.current_latent = wp
         if self.use_cuda:

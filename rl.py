@@ -3,7 +3,7 @@ from env_gan import GANEnv
 import matplotlib.pyplot as plt
 import os
 from custom_callback import CustomCallback
-#from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 import argparse
 
@@ -19,7 +19,9 @@ def parse_args():
 	parser.add_argument('--eta', type = float, help = 'Weight of IDloss reward (reward_id).', default=1)
 	parser.add_argument('--save_interval', type = int, help = 'The frequency in which the images are saved.', default=100)
 	parser.add_argument('--buffer_size', type = int, help = 'The buffer size of the sac algorithm.', default=1)     
-	parser.add_argument('--total_timestep', type = int, help = 'The total timesteps for training.',default=1)         
+	parser.add_argument('--total_timestep', type = int, help = 'The total timesteps for training.',default=1)
+	parser.add_argument('--eval_mode', type = bool, help = 'Run env in eval mode (generate images).',default=False)
+              
 
 	args = vars(parser.parse_args())
 	args = {k: v for k, v in args.items() if v is not None}
@@ -32,6 +34,43 @@ def make_env(gan_model_name, text_prompt, threshold, epsilon, seed):
         env.reset(seed)
         return env
     return _init
+
+def train(env,
+          save_interval,
+          buffer_size,
+          total_timestep,
+          experiment_path):
+
+    model = SAC('MlpPolicy', env, verbose=1, buffer_size=buffer_size)
+
+    save_image_callback = CustomCallback(save_freq=save_interval, save_path=os.path.join(experiment_path, 'images', 'train'))
+
+    model.learn(total_timesteps=total_timestep, callback=save_image_callback)
+
+    model.save(os.path.join(experiment_path, "sac"))
+
+    return model
+
+def validation(env, model, experiment_path):
+    env.eval_mode = True
+    done = False
+    observation, _ = env.reset(seed=42)
+    action = env.action_space.sample()
+    episode = 0
+
+    while not done:
+        action, _ = model.predict(observation=observation, deterministic=True)
+        observation, reward, terminated, truncated, info = env.step(action)
+        #observation, reward, done, info = env.step(action)
+        #print(f"DONE: {done}")
+        done = truncated or terminated
+        print(f"Reward: {reward}")
+        images = info["image"]
+        os.makedirs(os.path.join(experiment_path, 'images', 'val'), exist_ok=True)
+        for i, image in enumerate(images):
+            image.save(os.path.join(experiment_path, 'images', 'val', f'image_{i}_ep={episode}.jpg'))
+        episode += 1
+    return     
 
 def main():
     args = parse_args()
@@ -46,6 +85,7 @@ def main():
     save_interval=args['save_interval']
     buffer_size=args['buffer_size']
     total_timestep=args['total_timestep']
+    eval_mode = args['eval_mode']
 
     # Some checks
     assert 'stylegan' in gan_model_name
@@ -53,35 +93,25 @@ def main():
     text_prompt_folder = text_prompt.replace(' ', '_')
     experiment_path = os.path.join('rl_experiments', gan_model_name, text_prompt_folder, f"th={threshold}_ep={epsilon}")
 
-    env = GANEnv(gan_model_name=gan_model_name, text_prompt=text_prompt, threshold=threshold, epsilon=epsilon, batch_size=batch_size, theta=theta, eta=eta)
-    #num_envs = 2
-    #env = SubprocVecEnv([make_env(gan_model_name, text_prompt, threshold, epsilon, seed) for seed in range(num_envs)])
+    env = GANEnv(gan_model_name=gan_model_name, 
+                 text_prompt=text_prompt, 
+                 eval_mode=eval_mode, 
+                 threshold=threshold, 
+                 epsilon=epsilon, 
+                 batch_size=batch_size, 
+                 theta=theta, 
+                 eta=eta)
 
-    model = SAC('MlpPolicy', env, verbose=1, buffer_size=buffer_size, batch_size=3)
-
-    save_image_callback = CustomCallback(save_freq=save_interval, save_path=os.path.join(experiment_path, 'images', 'train'))
-
-    print(f"Training with {gan_model_name} and text prompt: {text_prompt}")
-
-    model.learn(total_timesteps=total_timestep, callback=save_image_callback)
-
-    model.save(os.path.join(experiment_path, "sac"))
-
-    done = False
-    observation, _ = env.reset(seed=42)
-    action = env.action_space.sample()
-    episode = 0
-
-    while not done:
-        action, _ = model.predict(observation=observation, deterministic=True)
-        observation, reward, terminated, truncated, info = env.step(action)
-        done = truncated or terminated
-        print(f"Reward: {reward}")
-        images = info["image"]
-        os.makedirs(os.path.join(experiment_path, 'images', 'val'), exist_ok=True)
-        for i, image in enumerate(images):
-            image.save(os.path.join(experiment_path, 'images', 'val', f'image_{i}_ep={episode}.jpg'))
-        episode += 1
+    print(f"TRAINING...")
+    model = train(env,
+          save_interval,
+          buffer_size,
+          total_timestep,
+          experiment_path)
+    print(" DONE")
+    
+    if eval_mode:
+         validation(env, model, experiment_path)
 
 if __name__ == '__main__':
      main()
