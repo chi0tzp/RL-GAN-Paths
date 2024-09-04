@@ -14,3 +14,7 @@ experiments/*
 !experiments/latent_codes/*
 !rl_experiments/
 rl_experiments/*
+!wandb/
+wandb/*
+wandb/
+checkpoints/
