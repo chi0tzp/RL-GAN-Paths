@@ -49,22 +49,12 @@ class SAC(object):
 
     def update_parameters(self, memory, batch_size, updates, beta=0.4):
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch, weights, indices = memory.sample(batch_size=batch_size, beta=beta)
-        #print(f"{state_batch.shape=}\n{action_batch.shape=}\n{reward_batch.shape=}\n{next_state_batch.shape=}\n{mask_batch.shape=}")
 
         with torch.no_grad():
             next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
-            #print(f"{next_state_action.shape=}-{next_state_action}\n{next_state_log_pi.shape=}-{next_state_log_pi}")
             qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
-            #print(f"{qf1_next_target.shape=}-{qf1_next_target}\n{qf2_next_target.shape=}-{qf2_next_target}")
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
-            #print(f"MIN QF NEXT TARGET: {min_qf_next_target}")
             next_q_value = reward_batch + mask_batch * self.gamma * min_qf_next_target
-            #print(f"NEXT Q VALUE: {next_q_value}")
-
-        #print(f"min_qf_next_target.shape={min_qf_next_target.shape}")
-        #print(f"reward_batch.shape={reward_batch.shape}")
-        #print(f"mask_batch.shape={mask_batch.shape}")
-        #print(f"next_q_value.shape={next_q_value.shape}")
 
         qf1, qf2 = self.critic(state_batch, action_batch)
         

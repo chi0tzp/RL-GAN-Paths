@@ -54,15 +54,10 @@ class QNetwork(nn.Module):
     def forward(self, state, action):
         xu1 = F.relu(self.conv1_q1(state))
         xu1 = F.relu(self.conv2_q1(xu1))
-        #print(f"BEFORE VIEW: {xu1.shape=}")
         xu1 = xu1.view(xu1.size(0), -1)  # Flatten the conv layer output
-        #print(f"AFTER VIEW: {xu1.shape=}")
         xu1 = torch.cat([xu1, action.view(action.size(0), -1)], 1)
-        #print(f"AFTER CAT: {xu1.shape=}")
         xu1 = F.relu(self.linear1_q1(xu1))
-        #print(f"AFTER RELU: {xu1.shape=}") 
         x1 = self.linear2_q1(xu1)
-        #print(f"X1 linear: {x1.shape=}")
 
         xu2 = F.relu(self.conv1_q2(state))
         xu2 = F.relu(self.conv2_q2(xu2))
@@ -106,23 +101,16 @@ class GaussianPolicy(nn.Module):
         return mean, log_std
 
     def sample(self, state):
-        #print(f"SAMPLE-STATE: {state.shape=}-{state}")
         mean, log_std = self.forward(state)
         std = log_std.exp()
-        #print(f"SAMPLE-mean: {mean.shape=}-{mean}\n{std.shape=}-{std}")
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
         y_t = torch.tanh(x_t)
-        #print(f"SAMPLE-xt: {x_t.shape=}-{x_t}\n{y_t.shape=}-{y_t}")
         action = y_t * self.action_scale + self.action_bias
-        #print(f"SAMPLE-ACTION: {action.shape=}-{action}")
         log_prob = normal.log_prob(x_t)
-        #print(f"SAMPLE_LOGPORB 1 : {log_prob.shape=}-{log_prob}")
         # Enforcing Action Bound
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
-        #print(f"SAMPLE_LOGPROB 2: {log_prob.shape=}-{log_prob}")
         log_prob = log_prob.mean(1, keepdim=True)
-        #print(f"SAMPLE LOGPROB SUM: {log_prob.shape=}-{log_prob}")
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
         return action.view(state.size(0), self.num_actions[0], self.num_actions[1]), log_prob, mean.view(state.size(0), self.num_actions[0], self.num_actions[1])
 

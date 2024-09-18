@@ -38,6 +38,8 @@ parser.add_argument('--threshold', type = float, help = 'Threshold of similarity
 parser.add_argument('--epsilon', type = float, help = 'Module of the step.', default=0.025)
 parser.add_argument('--theta', type = int, help = 'Number of the first layers of GAN that will be modified by actions', default=8)
 parser.add_argument('--eta', type = float, help = 'Weight of IDloss reward (reward_id).', default=1)
+
+# Training args
 parser.add_argument('--checkpoint_interval', type=int, default=1000, metavar='N', help='How often to save checkpoints (default: 10000 iterations)')
 parser.add_argument('--resume', action="store_true", help='Resume training from the last checkpoint (default: False)')
 parser.add_argument('--wandb_log', action="store_true", help='Log in Wandb (default: False)')
@@ -47,10 +49,10 @@ args = parser.parse_args()
 
 project_name = f"{args.text_prompt}-policy={args.policy}-mem={args.memory}-eta={args.eta}-threshold={args.threshold}-ep={args.epsilon}-batch={args.batch_size}-lr={args.lr}-gamma={args.gamma}-tau={args.tau}-alpha={args.alpha}"
 
-# Initialize Weights & Biases
+# Initialize logger (Weights & Biases)
 if args.wandb_log: wandb.init(project="RL-GAN", name=project_name, config=args)
 
-# ENV
+# Initialise Environment
 env = GANEnv(gan_model_name=args.gan_model_name, 
                  text_prompt=args.text_prompt,
                  threshold=args.threshold, 
@@ -58,7 +60,7 @@ env = GANEnv(gan_model_name=args.gan_model_name,
                  theta=args.theta, 
                  eta=args.eta)
 
-# Set environment seed
+# Set environment seeds
 env.seed(args.seed)
 env.action_space.seed(args.seed)
 torch.manual_seed(args.seed)
@@ -77,7 +79,6 @@ if args.resume:
         print("Checkpoint not found. Starting from scratch.")
 
 # Memory
-#memory = ReplayMemory(args.replay_size, args.seed)
 if args.memory == 'Tensor':
     memory = TensorReplayMemory(args.replay_size, state_shape=env.observation_space.shape, action_shape=env.action_space.shape, device='cuda' if args.cuda else 'cpu')
 elif args.memory == 'PER':
@@ -98,7 +99,6 @@ for i_episode in itertools.count(1):
     if i_episode % args.log_img_interval == 0: log_img = True
     beta_end = 1.0
     beta_start = 0.4
-
     beta = beta_start
 
     while not done:
@@ -111,8 +111,6 @@ for i_episode in itertools.count(1):
         if len(memory) > args.batch_size: # If we collected enough transitions
             for _ in range(args.updates_per_step):
                 critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates, beta=beta)
-                #eta_t = eta_0 + (eta_T - eta_0) * (total_numsteps / args.num_steps)
-                #critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory, args.batch_size, updates, eta=eta_t, K=args.updates_per_step)
 
                 # Update beta
                 beta = min(beta_end, beta_start + (1.0 - beta_start) * updates / args.num_steps)
@@ -144,7 +142,7 @@ for i_episode in itertools.count(1):
         # Mask for terminal state
         mask = 1 if episode_steps == env.max_episode_steps else float(not done)
 
-        memory.push(state, action, reward, next_state, mask)
+        memory.push(state, action, reward, next_state, mask) # Save trajectory in the memory
 
         state = next_state
 
@@ -155,28 +153,6 @@ for i_episode in itertools.count(1):
 
     if total_numsteps > args.num_steps:
         break
-
-    # Evaluation
-    if i_episode % 10 == 0 and args.eval:
-        avg_reward = 0.0
-        episodes = 10
-        for _ in range(episodes):
-            state = env.reset()
-            episode_reward = 0
-            done = False
-            while not done:
-                action = agent.select_action(state, evaluate=True)
-                next_state, reward, reward_clip, reward_id, terminated, info = env.step(action, log_img=True)
-                episode_reward += reward
-                state = next_state
-            avg_reward += episode_reward
-        avg_reward /= episodes
-        if args.wandb_log: 
-            wandb.log({'avg_reward/test': avg_reward}, step=total_numsteps)
-            wandb.log({'image': wandb.Image(info['image'])})
-        print("----------------------------------------")
-        print("Test Episodes: {}, Avg. Reward: {}".format(episodes, round(avg_reward, 2)))
-        print("----------------------------------------")
 
 env.close()
 if args.wandb_log: wandb.finish()
