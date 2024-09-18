@@ -80,7 +80,7 @@ class GANEnv(gym.Env):
         self.input_image = self.G(self.current_latent)
         image_features_init = self.clip_model.encode_image(self.clip_img_transform(self.input_image))
         self.reward_clip_init = torch.cosine_similarity(image_features_init, self.text_features).item()
-
+        
     def step(self, action, log_img):
         delta = torch.tensor(action, dtype=torch.float32)
 

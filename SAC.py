@@ -32,7 +32,7 @@ class SAC(object):
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr, weight_decay=1e-4)
 
             self.policy = GaussianPolicy(num_inputs, action_space.shape, args.hidden_size, action_space).to(self.device)
-            self.policy_optim = Adam(self.policy.parameters(), lr=args.lr, weight_decay=1e-4) 
+            self.policy_optim = Adam(self.policy.parameters(), lr=args.lr, weight_decay=1e-4)
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
@@ -49,7 +49,7 @@ class SAC(object):
 
     def update_parameters(self, memory, batch_size, updates, beta=0.4):
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch, weights, indices = memory.sample(batch_size=batch_size, beta=beta)
-        print(f"{state_batch.shape=}\n{action_batch.shape=}\n{reward_batch.shape=}\n{next_state_batch.shape=}\n{mask_batch.shape=}")
+        #print(f"{state_batch.shape=}\n{action_batch.shape=}\n{reward_batch.shape=}\n{next_state_batch.shape=}\n{mask_batch.shape=}")
 
         with torch.no_grad():
             next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)

@@ -12,7 +12,7 @@ from env_gan import GANEnv
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
 
 # SAC args
-parser.add_argument('--policy', default="Gaussian", help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
+parser.add_argument('--policy', default="Gaussian", help='Policy Type: Gaussian | Transformer | Deterministic (default: Gaussian)')
 parser.add_argument('--memory', default="Tensor", help='Memory Type: Tensor | PER (default: Tensor)')
 parser.add_argument('--eval', action='store_true', help='Evaluates a policy every 10 episodes (default: True)')
 parser.add_argument('--gamma', type=float, default=0.99, metavar='G', help='discount factor for reward (default: 0.99)')
@@ -45,7 +45,7 @@ parser.add_argument('--log_img_interval', type=int, default=1000, metavar='N', h
 
 args = parser.parse_args()
 
-project_name = f"{args.text_prompt}-mem={args.memory}-eta={args.eta}-threshold={args.threshold}-ep={args.epsilon}-batch={args.batch_size}-lr={args.lr}-gamma={args.gamma}-tau={args.tau}-alpha={args.alpha}"
+project_name = f"{args.text_prompt}-policy={args.policy}-mem={args.memory}-eta={args.eta}-threshold={args.threshold}-ep={args.epsilon}-batch={args.batch_size}-lr={args.lr}-gamma={args.gamma}-tau={args.tau}-alpha={args.alpha}"
 
 # Initialize Weights & Biases
 if args.wandb_log: wandb.init(project="RL-GAN", name=project_name, config=args)
