@@ -90,3 +90,9 @@ You can customize the training process using various command-line arguments:
 - Checkpoints: Model checkpoints are saved in the checkpoints/ directory at intervals specified by --checkpoint_interval.
 
 Generated images are logged at intervals specified by --log_img_interval. If using W&B, they will appear under the "Media" section of your run. Otherwise, you can modify the code to save images locally.
+
+## Acknowledgments
+This project builds upon the following:
+
+- https://github.com/chi0tzp/WarpedGANSpace
+- https://github.com/pranz24/pytorch-soft-actor-critic
